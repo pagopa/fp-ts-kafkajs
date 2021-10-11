@@ -48,7 +48,7 @@ export const fromConfig = (
   config: ValidableKafkaProducerConfig
 ): KafkaProducer => (): Producer => new Kafka(config).producer(config);
 
-const send: <B>(
+export const send: <B>(
   topic: KafkaProducerTopicConfig<B>,
   messages: ReadonlyArray<B>,
   fa: KafkaProducer
