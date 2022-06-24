@@ -47,7 +47,7 @@ stages:
       and(
         succeeded(),
         or(
-          eq(variables['Build.SourceBranch'], 'refs/heads/master'),
+          eq(variables['Build.SourceBranch'], 'refs/heads/main'),
           and(
             startsWith(variables['Build.SourceBranch'], 'refs/tags'),
             endsWith(variables['Build.SourceBranch'], '-RELEASE')
@@ -57,7 +57,7 @@ stages:
     jobs:
       - job: make_release
         steps:
-        - ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/master') }}:
+        - ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/main') }}:
           - template: templates/node-job-setup/template.yaml@pagopaCommons
             parameters:
               persistCredentials: true
@@ -68,7 +68,7 @@ stages:
               gitUsername: $(GIT_USERNAME)
               gitHubConnection: $(GITHUB_CONNECTION)
 
-        - ${{ if ne(variables['Build.SourceBranch'], 'refs/heads/master') }}:
+        - ${{ if ne(variables['Build.SourceBranch'], 'refs/heads/main') }}:
           - script: |
               echo "We assume this reference to be a valid release: $(Build.SourceBranch). Therefore, there is no need to bundle a new release."
             displayName: 'Skip release bundle'
