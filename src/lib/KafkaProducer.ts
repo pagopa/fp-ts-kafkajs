@@ -1,9 +1,10 @@
-import * as IO from "fp-ts/IO";
 import * as E from "fp-ts/Either";
-import * as TE from "fp-ts/TaskEither";
-import * as O from "fp-ts/Option";
-import { Kafka, Producer, RecordMetadata, Message } from "kafkajs";
+import * as IO from "fp-ts/IO";
 import { flow, pipe } from "fp-ts/lib/function";
+import * as O from "fp-ts/Option";
+import * as RA from "fp-ts/ReadonlyArray";
+import * as TE from "fp-ts/TaskEither";
+import { Kafka, Message, Producer, RecordMetadata } from "kafkajs";
 import {
   connect,
   disconnectWithoutError,
@@ -16,6 +17,8 @@ import {
   MessageFormatter,
   ValidableKafkaProducerConfig
 } from "./KafkaTypes";
+
+const MAX_CHUNK_SIZE = 500;
 
 /**
  * @category: model
@@ -48,6 +51,31 @@ export const fromConfig = (
   config: ValidableKafkaProducerConfig
 ): KafkaProducer => (): Producer => new Kafka(config).producer(config);
 
+export const publishChunks = <B>(
+  client: Producer,
+  messages: ReadonlyArray<B>,
+  topic: KafkaProducerTopicConfig<B>
+): TE.TaskEither<
+  ReadonlyArray<IStorableSendFailureError<B>>,
+  ReadonlyArray<RecordMetadata>
+> =>
+  pipe(
+    messages,
+    RA.chunksOf(MAX_CHUNK_SIZE),
+    RA.map(chunks =>
+      TE.tryCatch(
+        () =>
+          client.send({
+            ...topic,
+            messages: messagify(chunks, topic.messageFormatter)
+          }),
+        e => storableSendFailureError(e, chunks)
+      )
+    ),
+    RA.sequence(TE.ApplicativeSeq),
+    TE.map(RA.flatten)
+  );
+
 export const send: <B>(
   topic: KafkaProducerTopicConfig<B>,
   messages: ReadonlyArray<B>,
@@ -68,16 +96,7 @@ export const send: <B>(
     TE.bindTo("client"),
     TE.chainFirst(({ client }) => connect(client)),
     TE.mapLeft(e => storableSendFailureError(e, messages)),
-    TE.bindW("results", ({ client }) =>
-      TE.tryCatch(
-        () =>
-          client.send({
-            ...topic,
-            messages: messagify(messages, topic.messageFormatter)
-          }),
-        e => storableSendFailureError(e, messages)
-      )
-    ),
+    TE.bindW("results", ({ client }) => publishChunks(client, messages, topic)),
     TE.chainFirstW(({ results }) => processErrors(messages, results)),
     TE.chainFirstW(({ client }) => disconnectWithoutError(client)),
     TE.map(({ results }) => results)
