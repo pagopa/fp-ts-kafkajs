@@ -1,6 +1,6 @@
 {
   "name": "@pagopa/fp-ts-kafkajs",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "fp-ts-kafkajs",
   "repository": "https://github.com/pagopa/fp-ts-kafkajs",
   "author": "https://pagopa.gov.it",
