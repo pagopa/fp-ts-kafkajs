@@ -37,7 +37,7 @@
     "@pagopa/ts-commons": "^10.5.1",
     "fp-ts": "^2.10.5",
     "io-ts": "^2.2.16",
-    "kafkajs": "^1.15.0",
+    "kafkajs": "^2.2.4",
     "typedoc": "^0.20.36"
   }
 }
