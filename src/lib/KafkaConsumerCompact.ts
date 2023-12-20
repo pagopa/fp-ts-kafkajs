@@ -1,8 +1,10 @@
 /* eslint-disable sort-keys */
 import * as E from "fp-ts/Either";
 import * as IO from "fp-ts/IO";
+import * as O from "fp-ts/Option";
 import * as TE from "fp-ts/TaskEither";
 import { constVoid, pipe } from "fp-ts/function";
+
 import {
   Consumer,
   ConsumerConfig,
@@ -13,7 +15,7 @@ import {
   Kafka,
   KafkaConfig
 } from "kafkajs";
-import { connect, disconnectWithoutError } from "./KafkaOperation";
+import { connect } from "./KafkaOperation";
 import {
   AzureEventhubSas,
   AzureEventhubSasFromString
@@ -39,7 +41,9 @@ export const getConsumerFromSas = (
   groupId?: string
 ): KafkaConsumerCompact =>
   pipe(
-    {
+    O.fromNullable(groupId),
+    O.getOrElse(() => "consumer-group"),
+    defaultGroupId => ({
       brokers: [`${sas.url}:9093`],
       ssl: true,
       sasl: {
@@ -48,9 +52,8 @@ export const getConsumerFromSas = (
         password: AzureEventhubSasFromString.encode(sas)
       },
       clientId: sas.policy,
-      groupId: groupId || "consumer-group",
-      topic: sas.name
-    },
+      groupId: defaultGroupId
+    }),
     fullConfig => getConsumerFromConfig(fullConfig)
   );
 
@@ -69,30 +72,28 @@ export interface IConsumerRunOptions {
 export const getMessageConsumerRunConfig = (
   eachMessageHandler: EachMessageHandler,
   consumerRunOptions: IConsumerRunOptions
-): ConsumerRunConfig =>
-  ({
-    autoCommit: consumerRunOptions.autoCommit,
-    autoCommitInterval: consumerRunOptions.autoCommitInterval,
-    autoCommitThreshold: consumerRunOptions.autoCommitThreshold,
-    eachBatchAutoResolve: consumerRunOptions.eachBatchAutoResolve,
-    partitionsConsumedConcurrently:
-      consumerRunOptions.partitionsConsumedConcurrently,
-    eachMessage: eachMessageHandler
-  } as ConsumerRunConfig);
+): ConsumerRunConfig => ({
+  autoCommit: consumerRunOptions.autoCommit,
+  autoCommitInterval: consumerRunOptions.autoCommitInterval,
+  autoCommitThreshold: consumerRunOptions.autoCommitThreshold,
+  eachBatchAutoResolve: consumerRunOptions.eachBatchAutoResolve,
+  partitionsConsumedConcurrently:
+    consumerRunOptions.partitionsConsumedConcurrently,
+  eachMessage: eachMessageHandler
+});
 
 export const getBatchConsumerRunConfig = (
   eachBatchHandler: EachBatchHandler,
   consumerRunOptions: IConsumerRunOptions
-): ConsumerRunConfig =>
-  ({
-    autoCommit: consumerRunOptions.autoCommit,
-    autoCommitInterval: consumerRunOptions.autoCommitInterval,
-    autoCommitThreshold: consumerRunOptions.autoCommitThreshold,
-    eachBatchAutoResolve: consumerRunOptions.eachBatchAutoResolve,
-    partitionsConsumedConcurrently:
-      consumerRunOptions.partitionsConsumedConcurrently,
-    eachBatch: eachBatchHandler
-  } as ConsumerRunConfig);
+): ConsumerRunConfig => ({
+  autoCommit: consumerRunOptions.autoCommit,
+  autoCommitInterval: consumerRunOptions.autoCommitInterval,
+  autoCommitThreshold: consumerRunOptions.autoCommitThreshold,
+  eachBatchAutoResolve: consumerRunOptions.eachBatchAutoResolve,
+  partitionsConsumedConcurrently:
+    consumerRunOptions.partitionsConsumedConcurrently,
+  eachBatch: eachBatchHandler
+});
 
 export const run = (config: ConsumerRunConfig) => (
   client: Consumer
@@ -105,9 +106,9 @@ export enum ReadType {
 }
 
 export const read = (fa: KafkaConsumerCompact) => (
-  topic: string,
+  inputTopic: string,
   readType: ReadType = ReadType.Message,
-  handler?: (payload: KafkaConsumerPayload) => Promise<void>,
+  handler: (payload: KafkaConsumerPayload) => Promise<void>,
   consumerRunOptions: IConsumerRunOptions = {}
 ): TE.TaskEither<Error, void> =>
   pipe(
@@ -121,7 +122,10 @@ export const read = (fa: KafkaConsumerCompact) => (
         TE.bind("consumer", () => TE.of(client.consumer)),
         TE.chainFirst(({ consumer }) => pipe(consumer, connect)),
         TE.chainFirst(({ consumer }) =>
-          pipe(consumer, subscribe({ topics: [topic] }))
+          pipe(
+            consumer,
+            subscribe({ topics: [inputTopic], fromBeginning: true })
+          )
         ),
         TE.chainFirst(({ consumer }) =>
           pipe(
@@ -130,12 +134,11 @@ export const read = (fa: KafkaConsumerCompact) => (
               : getBatchConsumerRunConfig(handler, consumerRunOptions),
             runConfig => pipe(consumer, run(runConfig))
           )
-        ),
-        TE.chain(({ consumer }) => disconnectWithoutError(consumer))
+        )
       )
     ),
     TE.bimap(
-      error => new Error(`Error during reading the message: ${error}`),
+      error => new Error(`Error reading the message: ${error}`),
       constVoid
     )
   );
