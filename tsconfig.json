@@ -1,21 +1,17 @@
 {
   "compilerOptions": {
-    "target": "es2017",
-    "rootDir": "src",
-    "outDir": "dist",
     "module": "commonjs",
-    "moduleResolution": "node",
-    "strict": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "es6",
     "noImplicitAny": true,
-    "declaration": true,
+    "moduleResolution": "node",
     "sourceMap": true,
-    "lib": []
+    "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "*": ["node_modules/*", "src/types/*"]
+    }
   },
-  "include": [
-    "src/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "src/**/__tests__/*"
-  ]
+  "include": ["src/**/*"]
 }

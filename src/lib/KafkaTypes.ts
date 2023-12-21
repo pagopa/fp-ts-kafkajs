@@ -1,6 +1,13 @@
-import { KafkaConfig, Message, ProducerConfig, ProducerRecord } from "kafkajs";
+import {
+  ConsumerConfig,
+  KafkaConfig,
+  Message,
+  ProducerConfig,
+  ProducerRecord
+} from "kafkajs";
 
 export type ValidableKafkaProducerConfig = KafkaConfig & ProducerConfig;
+export type ValidableKafkaConsumerConfig = KafkaConfig & ConsumerConfig;
 
 export type MessageFormatter<T> = (message: T) => Message;
 
