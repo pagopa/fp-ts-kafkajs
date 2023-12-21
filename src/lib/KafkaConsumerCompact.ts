@@ -78,28 +78,29 @@ export const getConsumerRunConfig = (
   runnerConfig: RunnerConfig
 ): ConsumerRunConfig =>
   pipe(
-    runnerConfig.readType === ReadType.Message,
-    B.fold(
-      () => ({
-        autoCommit: runnerConfig.autoCommit,
-        autoCommitInterval: runnerConfig.autoCommitInterval,
-        autoCommitThreshold: runnerConfig.autoCommitThreshold,
-        eachBatchAutoResolve: runnerConfig.eachBatchAutoResolve,
-        partitionsConsumedConcurrently:
-          runnerConfig.partitionsConsumedConcurrently,
-        eachBatch: runnerConfig.handler
-      }),
-      () => ({
-        autoCommit: runnerConfig.autoCommit,
-        autoCommitInterval: runnerConfig.autoCommitInterval,
-        autoCommitThreshold: runnerConfig.autoCommitThreshold,
-        eachBatchAutoResolve: runnerConfig.eachBatchAutoResolve,
-        partitionsConsumedConcurrently:
-          runnerConfig.partitionsConsumedConcurrently,
-        eachMessage: runnerConfig.handler,
-        eachBatch: undefined
-      })
-    )
+    {
+      autoCommit: runnerConfig.autoCommit,
+      autoCommitInterval: runnerConfig.autoCommitInterval,
+      autoCommitThreshold: runnerConfig.autoCommitThreshold,
+      eachBatchAutoResolve: runnerConfig.eachBatchAutoResolve,
+      partitionsConsumedConcurrently:
+        runnerConfig.partitionsConsumedConcurrently
+    },
+    commonConfig =>
+      pipe(
+        runnerConfig.readType === ReadType.Message,
+        B.fold(
+          () => ({
+            ...commonConfig,
+            eachBatch: runnerConfig.handler
+          }),
+          () => ({
+            ...commonConfig,
+            eachMessage: runnerConfig.handler,
+            eachBatch: undefined
+          })
+        )
+      )
   );
 
 export type RunnerConfig =
