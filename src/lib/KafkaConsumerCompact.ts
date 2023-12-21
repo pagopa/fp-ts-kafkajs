@@ -3,6 +3,7 @@ import * as E from "fp-ts/Either";
 import * as IO from "fp-ts/IO";
 import * as O from "fp-ts/Option";
 import * as TE from "fp-ts/TaskEither";
+import * as B from "fp-ts/boolean";
 import { constVoid, pipe } from "fp-ts/function";
 
 import {
@@ -11,7 +12,6 @@ import {
   ConsumerRunConfig,
   ConsumerSubscribeTopics,
   EachBatchHandler,
-  EachMessageHandler,
   Kafka,
   KafkaConfig
 } from "kafkajs";
@@ -20,7 +20,6 @@ import {
   AzureEventhubSas,
   AzureEventhubSasFromString
 } from "./KafkaProducerCompact";
-import { KafkaConsumerPayload } from "./KafkaTypes";
 
 export interface IKafkaConsumerCompact {
   readonly consumer: Consumer;
@@ -69,47 +68,77 @@ export interface IConsumerRunOptions {
   readonly eachBatchAutoResolve?: boolean;
   readonly partitionsConsumedConcurrently?: number;
 }
-export const getMessageConsumerRunConfig = (
-  eachMessageHandler: EachMessageHandler,
-  consumerRunOptions: IConsumerRunOptions
-): ConsumerRunConfig => ({
-  autoCommit: consumerRunOptions.autoCommit,
-  autoCommitInterval: consumerRunOptions.autoCommitInterval,
-  autoCommitThreshold: consumerRunOptions.autoCommitThreshold,
-  eachBatchAutoResolve: consumerRunOptions.eachBatchAutoResolve,
-  partitionsConsumedConcurrently:
-    consumerRunOptions.partitionsConsumedConcurrently,
-  eachMessage: eachMessageHandler
-});
-
-export const getBatchConsumerRunConfig = (
-  eachBatchHandler: EachBatchHandler,
-  consumerRunOptions: IConsumerRunOptions
-): ConsumerRunConfig => ({
-  autoCommit: consumerRunOptions.autoCommit,
-  autoCommitInterval: consumerRunOptions.autoCommitInterval,
-  autoCommitThreshold: consumerRunOptions.autoCommitThreshold,
-  eachBatchAutoResolve: consumerRunOptions.eachBatchAutoResolve,
-  partitionsConsumedConcurrently:
-    consumerRunOptions.partitionsConsumedConcurrently,
-  eachBatch: eachBatchHandler
-});
-
-export const run = (config: ConsumerRunConfig) => (
-  client: Consumer
-): TE.TaskEither<Error, void> =>
-  TE.tryCatch(() => client.run(config), E.toError);
 
 export enum ReadType {
   Batch,
   Message
 }
 
+export const getConsumerRunConfig = (
+  runnerConfig: RunnerConfig
+): ConsumerRunConfig =>
+  pipe(
+    runnerConfig.readType === ReadType.Message,
+    B.fold(
+      () => ({
+        autoCommit: runnerConfig.autoCommit,
+        autoCommitInterval: runnerConfig.autoCommitInterval,
+        autoCommitThreshold: runnerConfig.autoCommitThreshold,
+        eachBatchAutoResolve: runnerConfig.eachBatchAutoResolve,
+        partitionsConsumedConcurrently:
+          runnerConfig.partitionsConsumedConcurrently,
+        eachBatch: runnerConfig.handler
+      }),
+      () => ({
+        autoCommit: runnerConfig.autoCommit,
+        autoCommitInterval: runnerConfig.autoCommitInterval,
+        autoCommitThreshold: runnerConfig.autoCommitThreshold,
+        eachBatchAutoResolve: runnerConfig.eachBatchAutoResolve,
+        partitionsConsumedConcurrently:
+          runnerConfig.partitionsConsumedConcurrently,
+        eachMessage: runnerConfig.handler,
+        eachBatch: undefined
+      })
+    )
+  );
+
+export type RunnerConfig =
+  | {
+      readonly readType: ReadType.Message;
+      readonly handler: EachBatchHandler;
+      readonly autoCommit: boolean;
+      readonly autoCommitInterval: number;
+      readonly autoCommitThreshold: number;
+      readonly eachBatchAutoResolve: boolean;
+      readonly partitionsConsumedConcurrently: number;
+    }
+  | {
+      readonly readType: ReadType.Batch;
+      readonly handler: EachBatchHandler;
+      readonly autoCommit: boolean;
+      readonly autoCommitInterval: number;
+      readonly autoCommitThreshold: number;
+      readonly eachBatchAutoResolve: boolean;
+      readonly partitionsConsumedConcurrently: number;
+    };
+
+interface IRunner {
+  readonly run: (
+    runConfig: ConsumerRunConfig
+  ) => (consumer: Consumer) => TE.TaskEither<Error, void>;
+}
+
+export const defaultRunner: IRunner = {
+  run: (runConfig: ConsumerRunConfig) => (
+    consumer: Consumer
+  ): TE.TaskEither<Error, void> =>
+    TE.tryCatch(() => consumer.run(runConfig), E.toError)
+};
+
 export const read = (fa: KafkaConsumerCompact) => (
-  inputTopic: string,
-  readType: ReadType = ReadType.Message,
-  handler: (payload: KafkaConsumerPayload) => Promise<void>,
-  consumerRunOptions: IConsumerRunOptions = {}
+  subscription: ConsumerSubscribeTopics,
+  runner: IRunner,
+  runnerConfig: RunnerConfig
 ): TE.TaskEither<Error, void> =>
   pipe(
     fa,
@@ -122,18 +151,10 @@ export const read = (fa: KafkaConsumerCompact) => (
         TE.bind("consumer", () => TE.of(client.consumer)),
         TE.chainFirst(({ consumer }) => pipe(consumer, connect)),
         TE.chainFirst(({ consumer }) =>
-          pipe(
-            consumer,
-            subscribe({ topics: [inputTopic], fromBeginning: true })
-          )
+          pipe(consumer, subscribe(subscription))
         ),
         TE.chainFirst(({ consumer }) =>
-          pipe(
-            readType === ReadType.Message
-              ? getMessageConsumerRunConfig(handler, consumerRunOptions)
-              : getBatchConsumerRunConfig(handler, consumerRunOptions),
-            runConfig => pipe(consumer, run(runConfig))
-          )
+          pipe(consumer, runner.run(runnerConfig))
         )
       )
     ),

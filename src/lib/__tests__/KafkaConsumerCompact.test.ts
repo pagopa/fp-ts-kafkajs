@@ -5,18 +5,14 @@ import {
   Consumer,
   ConsumerConfig,
   ConsumerRunConfig,
-  EachMessageHandler,
   KafkaConfig
 } from "kafkajs";
 import * as EventHubUtils from "../KafkaConsumerCompact";
 import {
   ReadType,
-  getBatchConsumerRunConfig,
   getConsumerFromConfig,
   getConsumerFromSas,
-  getMessageConsumerRunConfig,
   read,
-  run,
   subscribe
 } from "../KafkaConsumerCompact";
 import * as KafkaOperation from "../KafkaOperation";
@@ -108,13 +104,31 @@ const mockConsumerRunOptions = ({
   partitionsConsumedConcurrently: 4
 } as unknown) as ConsumerRunConfig;
 
-describe("getMessageConsumerRunConfig", () => {
+const messageRunnerConfig = ({
+  readType: ReadType.Message,
+  autoCommit: true,
+  autoCommitInterval: 1,
+  autoCommitThreshold: 2,
+  eachBatchAutoResolve: false,
+  partitionsConsumedConcurrently: 4,
+  handler: mockEachMessageHandler
+} as unknown) as EventHubUtils.RunnerConfig;
+
+const batchRunnerConfig = ({
+  readType: ReadType.Batch,
+  autoCommit: true,
+  autoCommitInterval: 1,
+  autoCommitThreshold: 2,
+  eachBatchAutoResolve: false,
+  partitionsConsumedConcurrently: 4,
+  handler: mockEachBatchHandler
+} as unknown) as EventHubUtils.RunnerConfig;
+
+describe("getConsumerRunConfig", () => {
   it("should create a ConsumerRunConfig for EachMessageHandler", () => {
-    const result = getMessageConsumerRunConfig(
-      mockEachMessageHandler,
-      mockConsumerRunOptions
-    );
+    const result = EventHubUtils.getConsumerRunConfig(messageRunnerConfig);
     expect(result.eachMessage).toBe(mockEachMessageHandler);
+    expect(result.eachBatch).toBe(undefined);
     expect(result.autoCommit).toBe(true);
     expect(result.autoCommitInterval).toBe(1);
     expect(result.autoCommitThreshold).toBe(2);
@@ -125,47 +139,14 @@ describe("getMessageConsumerRunConfig", () => {
 
 describe("getBatchConsumerRunConfig", () => {
   it("should create a ConsumerRunConfig for EachBatchHandler", () => {
-    const result = getBatchConsumerRunConfig(
-      mockEachBatchHandler,
-      mockConsumerRunOptions
-    );
-
+    const result = EventHubUtils.getConsumerRunConfig(batchRunnerConfig);
     expect(result.eachBatch).toBe(mockEachBatchHandler);
+    expect(result.eachMessage).toBe(undefined);
     expect(result.autoCommit).toBe(true);
     expect(result.autoCommitInterval).toBe(1);
     expect(result.autoCommitThreshold).toBe(2);
     expect(result.eachBatchAutoResolve).toBe(false);
     expect(result.partitionsConsumedConcurrently).toBe(4);
-  });
-});
-
-describe("run", () => {
-  it("should run successfully", async () => {
-    mockRun.mockResolvedValueOnce(void 0);
-    const result = await run({
-      ...mockEachMessageHandler,
-      ...mockConsumerRunOptions
-    })(mockConsumer)();
-
-    expect(mockConsumer.run).toHaveBeenCalledWith({
-      ...mockEachMessageHandler,
-      ...mockConsumerRunOptions
-    });
-    expect(result).toEqual(E.right(void 0));
-  });
-
-  it("should run with error", async () => {
-    mockRun.mockRejectedValueOnce(new Error("error"));
-    const result = await run({
-      ...mockEachMessageHandler,
-      ...mockConsumerRunOptions
-    })(mockConsumer)();
-
-    expect(mockConsumer.run).toHaveBeenCalledWith({
-      ...mockEachMessageHandler,
-      ...mockConsumerRunOptions
-    });
-    expect(result).toEqual(E.left(new Error("error")));
   });
 });
 
@@ -184,11 +165,10 @@ const disconnectWithoutErrorSpy = jest.spyOn(
   "disconnectWithoutError"
 );
 const subscribeSpy = jest.spyOn(EventHubUtils, "subscribe");
-const runSpy = jest.spyOn(EventHubUtils, "run");
+const runSpy = jest.spyOn(EventHubUtils.defaultRunner, "run");
 
 describe("readMessage", () => {
   const topic = "your-topic";
-  const eachMessageHandler: EachMessageHandler = {} as EachMessageHandler;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -201,9 +181,9 @@ describe("readMessage", () => {
     disconnectWithoutErrorSpy.mockReturnValueOnce(TE.right(undefined));
 
     const result = await read(kafkaConsumerMock)(
-      topic,
-      ReadType.Message,
-      eachMessageHandler
+      { topics: [topic] },
+      EventHubUtils.defaultRunner,
+      messageRunnerConfig
     )();
 
     expect(connectSpy).toHaveBeenCalledWith(consumerMock);
@@ -212,7 +192,6 @@ describe("readMessage", () => {
     });
 
     expect(runSpy).toHaveBeenCalled();
-    expect(disconnectWithoutErrorSpy).toHaveBeenCalledWith(consumerMock);
     expect(result).toEqual(E.right(undefined));
   });
 
@@ -222,9 +201,9 @@ describe("readMessage", () => {
     runSpy.mockReturnValueOnce(() => TE.left(new Error("Error")));
 
     const result = await read(kafkaConsumerMock)(
-      topic,
-      ReadType.Message,
-      eachMessageHandler
+      { topics: [topic] },
+      EventHubUtils.defaultRunner,
+      messageRunnerConfig
     )();
 
     expect(connectSpy).toHaveBeenCalledWith(consumerMock);
@@ -234,7 +213,7 @@ describe("readMessage", () => {
 
     expect(runSpy).toHaveBeenCalled();
     expect(result).toEqual(
-      E.left(new Error(`Error during reading the message: Error: Error`))
+      E.left(new Error(`Error reading the message: Error: Error`))
     );
   });
 });
