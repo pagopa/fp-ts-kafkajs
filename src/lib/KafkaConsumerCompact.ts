@@ -8,26 +8,28 @@ import { constVoid, pipe } from "fp-ts/function";
 
 import {
   Consumer,
-  ConsumerConfig,
   ConsumerRunConfig,
   ConsumerSubscribeTopics,
   EachBatchHandler,
-  Kafka,
-  KafkaConfig
+  Kafka
 } from "kafkajs";
 import { connect } from "./KafkaOperation";
 import {
   AzureEventhubSas,
   AzureEventhubSasFromString
 } from "./KafkaProducerCompact";
+import { ValidableKafkaConsumerConfig } from "./KafkaTypes";
+
+export enum ReadType {
+  Batch,
+  Message
+}
 
 export interface IKafkaConsumerCompact {
   readonly consumer: Consumer;
 }
 
 export type KafkaConsumerCompact = IO.IO<IKafkaConsumerCompact>;
-
-export type ValidableKafkaConsumerConfig = KafkaConfig & ConsumerConfig;
 
 export const getConsumerFromConfig = (
   config: ValidableKafkaConsumerConfig
@@ -60,19 +62,6 @@ export const subscribe = (subscription: ConsumerSubscribeTopics) => (
   client: Consumer
 ): TE.TaskEither<Error, void> =>
   TE.tryCatch(() => pipe(subscription, client.subscribe), E.toError);
-
-export interface IConsumerRunOptions {
-  readonly autoCommit?: boolean;
-  readonly autoCommitInterval?: number | null;
-  readonly autoCommitThreshold?: number | null;
-  readonly eachBatchAutoResolve?: boolean;
-  readonly partitionsConsumedConcurrently?: number;
-}
-
-export enum ReadType {
-  Batch,
-  Message
-}
 
 export const getConsumerRunConfig = (
   runnerConfig: RunnerConfig

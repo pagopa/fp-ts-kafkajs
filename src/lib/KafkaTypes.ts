@@ -1,7 +1,5 @@
 import {
   ConsumerConfig,
-  EachBatchPayload,
-  EachMessagePayload,
   KafkaConfig,
   Message,
   ProducerConfig,
@@ -19,5 +17,3 @@ export type KafkaProducerTopicConfig<T> = Omit<ProducerRecord, "messages"> & {
 
 export type KafkaProducerCompactConfig<T> = ValidableKafkaProducerConfig &
   KafkaProducerTopicConfig<T>;
-
-export type KafkaConsumerPayload = EachMessagePayload | EachBatchPayload;
